@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mappa Interattiva</title>
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .map-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 1400px;
+    background: white;
+  }
+
+  svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .country {
+    fill: #4da6ff;
+    stroke: white;
+    stroke-width: 0.4;
+    transition: fill 0.2s;
+  }
+
+  .pin-group {
+    cursor: pointer;
+  }
+
+  .pin-group:hover .pin-outer {
+    r: 14;
+  }
+
+  .pin-outer {
+    fill: none;
+    stroke: #e84040;
+    stroke-width: 3;
+    transition: all 0.2s;
+  }
+
+  .pin-inner {
+    fill: #e84040;
+    transition: all 0.2s;
+  }
+
+  .pin-group:hover .pin-inner {
+    fill: #ff6060;
+  }
+
+  .pin-label {
+    fill: #0a1a44;
+    font-family: Arial Black, Arial, sans-serif;
+    font-weight: 900;
+    font-size: 16px;
+    pointer-events: none;
+    text-shadow: 1px 1px 0 rgba(255,255,255,0.7);
+  }
+
+  .pulse {
+    fill: #e84040;
+    opacity: 0;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0% { r: 10; opacity: 0.6; }
+    100% { r: 28; opacity: 0; }
+  }
+
+  .tooltip {
+    position: fixed;
+    background: rgba(0,0,0,0.85);
+    color: white;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: Arial, sans-serif;
+    pointer-events: none;
+    display: none;
+    z-index: 999;
+    border: 1px solid rgba(0,0,0,0.2);
+  }
+</style>
+</head>
+
+<body>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div class="map-wrap">
+  <svg id="map" viewBox="0 0 1400 700"></svg>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+
+<script>
+const cities = [
+  { name: "India", lon: 78, lat: 22, url: "https://ivecogroup.sharepoint.com/:x:/r/sites/REGIS/MembersDocs/Shared%20Documents/Battery%20related%20regulations%20world.xlsx?d=w1b31b403777c435293fd9bb50a5082f5&csf=1&web=1&e=aogPDf&nav=MTVfe0MyNjQ1RjQwLTVFRTktRkY0Mi05NTA1LTNEQUUxNjYxM0M4MX0", labelDx: 12, labelDy: -8 },
+  { name: "Australia", lon: 134, lat: -25, url: "https://ivecogroup.sharepoint.com/:x:/r/sites/REGIS/MembersDocs/Shared%20Documents/Battery%20related%20regulations%20world.xlsx?d=w1b31b403777c435293fd9bb50a5082f5&csf=1&web=1&e=xBFH3u&nav=MTVfezc5MDBDNzM4LThGMjgtQzU0Ny1CM0MyLTRBQkFFRTM5REZCRX0", labelDx: 12, labelDy: -8 },
+  { name: "Latin America", lon: -60, lat: -15, url: "https://ivecogroup.sharepoint.com/:x:/r/sites/REGIS/MembersDocs/Shared%20Documents/Battery%20related%20regulations%20world.xlsx?d=w1b31b403777c435293fd9bb50a5082f5&csf=1&web=1&e=6urbLu&nav=MTVfezEyRkE3QkJFLTk3MjktNTQ0MS1BMUI5LUM0MzQyMUI2RTdGRH0", labelDx: 12, labelDy: -8 },
+  { name: "Taiwan", lon: 121, lat: 23.7, url: "https://ivecogroup.sharepoint.com/:x:/r/sites/REGIS/MembersDocs/Shared%20Documents/Battery%20related%20regulations%20world.xlsx?d=w1b31b403777c435293fd9bb50a5082f5&csf=1&web=1&e=7ucrZt&nav=MTVfezk4MjY1NDM4LUVGQjMtMzk0Ny04MTkzLTMyQUQxRDNFRjI5RH0", labelDx: 12, labelDy: -8 },
+  { name: "European Countries", lon: 10, lat: 50, url: "https://ivecogroup.sharepoint.com/:x:/r/sites/REGIS/MembersDocs/Shared%20Documents/Battery%20related%20regulations%20world.xlsx?d=w1b31b403777c435293fd9bb50a5082f5&csf=1&web=1&e=tbDsed&nav=MTVfe0VGMjZEQjZCLTdGMTktMTk0Ri1BNDAxLTJFNTA4NUQ4Q0E1M30", labelDx: 12, labelDy: -8 },
+];
+
+const width = 1400, height = 700;
+const svg = d3.select("#map");
+
+const projection = d3.geoEquirectangular()
+  .scale(height / Math.PI)
+  .translate([width / 2, height / 2]);
+
+const path = d3.geoPath().projection(projection);
+
+fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+  .then(r => r.json())
+  .then(world => {
+
+    const countries = topojson.feature(world, world.objects.countries);
+
+    svg.append("g")
+      .selectAll("path")
+      .data(countries.features)
+      .join("path")
+      .attr("class", "country")
+      .attr("d", path);
+
+    cities.forEach(city => {
+      const [x, y] = projection([city.lon, city.lat]);
+
+      const g = svg.append("g")
+        .attr("class", "pin-group")
+        .attr("transform", `translate(${x},${y})`)
+        .on("click", () => window.open(city.url, "_blank"))
+        .on("mouseenter", (e) => {
+          const tip = document.getElementById("tooltip");
+          tip.textContent = city.name + " → clicca per aprire";
+          tip.style.display = "block";
+          tip.style.left = (e.clientX + 14) + "px";
+          tip.style.top = (e.clientY - 36) + "px";
+        })
+        .on("mousemove", (e) => {
+          const tip = document.getElementById("tooltip");
+          tip.style.left = (e.clientX + 14) + "px";
+          tip.style.top = (e.clientY - 36) + "px";
+        })
+        .on("mouseleave", () => {
+          document.getElementById("tooltip").style.display = "none";
+        });
+
+      g.append("circle")
+        .attr("class", "pulse")
+        .attr("r", 10)
+        .style("animation-delay", (Math.random() * 2) + "s");
+
+      g.append("circle")
+        .attr("class", "pin-outer")
+        .attr("r", 11);
+
+      g.append("circle")
+        .attr("class", "pin-inner")
+        .attr("r", 5);
+
+      g.append("text")
+        .attr("class", "pin-label")
+        .attr("x", city.labelDx)
+        .attr("y", city.labelDy)
+        .text(city.name);
+    });
+
+  })
+  .catch(err => {
+    console.error("Errore caricamento mappa:", err);
+    svg.append("text")
+      .attr("x", 700).attr("y", 350)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#333")
+      .text("Errore nel caricamento della mappa");
+  });
+</script>
+
+</body>
+</html>
